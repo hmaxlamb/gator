@@ -5,7 +5,8 @@ import (
 	"errors"
 	"gator/internal/config"
 	"gator/internal/database"
-	"log"
+	"gator/internal/rss"
+    "fmt"
     "time"
 
 	"github.com/google/uuid"
@@ -51,7 +52,7 @@ func handlerLogin(s *State, cmd Command) error {
     }
 
     s.Cfg.SetUser(cmd.Args[0])
-    log.Printf("User: %s, has logged in", s.Cfg.Username)
+    fmt.Printf("User: %s, has logged in\n", s.Cfg.Username)
 
     return nil
 }
@@ -78,12 +79,94 @@ func handleRegister(s *State, cmd Command) error {
         return err
     }
 
-    log.Printf("User %s was created with UUID: %v", user.Name, user.ID)
+    fmt.Printf("User %s was created with UUID: %v\n", user.Name, user.ID)
 
     s.Cfg.SetUser(user.Name)
 
     return nil
 }
+
+func handleReset(s *State, cmd Command) error {
+    if len(cmd.Args) > 0 {
+        return errors.New("Too many arguments for command")
+    }
+
+    err := s.Db.ResetUsers(context.Background())
+    if err != nil {
+        return err
+    }
+
+    return nil
+}
+
+func handleUsers(s *State, cmd Command) error {
+    if len(cmd.Args) > 0 {
+        return errors.New("Too many arguments for command")
+    }
+
+    currentUsername := s.Cfg.Username
+
+    users, err := s.Db.GetUsers(context.Background())
+    if err != nil {
+        return err
+    }
+
+    for _, user := range users {
+        if user.Name == currentUsername {
+            fmt.Printf("* %s (current)\n", user.Name)
+        } else {
+            fmt.Printf("* %s\n", user.Name)
+        }
+    }
+
+    return nil
+}
+
+func handleAgg(s *State, cmd Command) error {
+	if len(cmd.Args) > 0 {
+		return errors.New("Too many arguments for command")
+	}
+
+	url := "https://www.wagslane.dev/index.xml"
+
+	feed, err := rss.FetchFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%v", feed)
+
+	return nil
+}
+
+func handleAddFeed(s *State, cmd Command) error {
+	if len(cmd.Args) != 2 {
+		return errors.New("Wrong number of args for command, Required: 2")
+	}
+
+	var params database.CreateFeedParams
+	params.ID = uuid.New()
+	params.Name = cmd.Args[0]
+	params.Url = cmd.Args[1]
+	params.CreatedAt = time.Now()
+	params.UpdatedAt = time.Now()
+
+	user, err := s.Db.GetUser(context.Background(), s.Cfg.Username)
+	if err != nil {
+		return err
+	}
+	params.UserID = user.ID
+
+	feed, err := s.Db.CreateFeed(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Feed Added: %v\n", feed)
+
+	return nil
+}
+
 
 func GetCommands() Commands {
     var cmds Commands
@@ -92,7 +175,10 @@ func GetCommands() Commands {
 
     cmds.register("login", handlerLogin)
     cmds.register("register", handleRegister)
-   
+    cmds.register("reset", handleReset)
+    cmds.register("users", handleUsers)
+	cmds.register("agg", handleAgg)
+	cmds.register("addfeed", handleAddFeed)
 
     return cmds
 }

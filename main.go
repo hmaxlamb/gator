@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"gator/internal/command"
 	"gator/internal/config"
     "gator/internal/database"
@@ -13,10 +12,6 @@ import (
 )
 
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: gator <command> [args...]")
-        os.Exit(1)
-    }
 
     cfg, err := config.Read()
     if err != nil {
@@ -52,5 +47,4 @@ func main() {
     if err != nil {
         log.Fatalf("unable to read config %v", err)
     }
-    fmt.Printf("Config: \n  Username: %s,\n  Db_Url: %s\n", cfg.Username, cfg.Db_url) 
 }

@@ -8,8 +8,8 @@ import (
 const configFileName = ".gatorconfig.json"
 
 type Config struct {
-    Db_url string
-    Username string
+    Db_url string `json:"Db_url"`
+    Username string `json:"Username"`
 }
 
 func Read() (Config, error) {
