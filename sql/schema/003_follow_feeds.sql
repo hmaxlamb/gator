@@ -1,4 +1,4 @@
--- +goose up
+-- +goose Up
 CREATE TABLE feed_follows(
     id int PRIMARY KEY,
     user_id uuid NOT NULL,
@@ -10,5 +10,5 @@ CREATE TABLE feed_follows(
     CONSTRAINT unique_user_feed_pair UNIQUE (user_id, feed_id)
 );
 
--- -goose down
+-- +goose Down
 DROP TABLE feed_follows;
