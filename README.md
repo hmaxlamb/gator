@@ -1,13 +1,13 @@
 # Gator
 
-This is a go program that allows users to view rss feeds via the command line
+Gator is a go program that allows users to view rss feeds via the command line
 
 Multiple users are supported.
 
 Clone the repo and run "docker compose up"
 
 
-#### Commands
+#### Commands in gator
 
 register: registers a new user
 
