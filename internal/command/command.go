@@ -13,128 +13,160 @@ import (
 )
 
 type State struct {
-    Db  *database.Queries
-    Cfg *config.Config
+	Db  *database.Queries
+	Cfg *config.Config
 }
 
 type Command struct {
-    Name string
-    Args []string
+	Name string
+	Args []string
 }
 
 type Commands struct {
-    CommandMap map[string]func(*State, Command) error
+	CommandMap map[string]func(*State, Command) error
 }
 
 func (cmds *Commands) run(s *State, cmd Command) error {
-    err := cmds.CommandMap[cmd.Name](s, cmd)
-    if err != nil {
-        return err
-    }
-
-    return nil
-}
-
-func (cmds *Commands) register(name string, f func(*State, Command) error) {
-    cmds.CommandMap[name] = f
-}
-
-func handlerLogin(s *State, cmd Command) error {
-    if len(cmd.Args) == 0 {
-        return errors.New("no arguements found for command 'login'")
-    }
-
-    name := cmd.Args[0]
-
-    user, _ := s.Db.GetUser(context.Background(), name)
-    if user == (database.User{}) {
-        return errors.New("User does not exists")
-    }
-
-    s.Cfg.SetUser(cmd.Args[0])
-    fmt.Printf("User: %s, has logged in\n", s.Cfg.Username)
-
-    return nil
-}
-
-func handleRegister(s *State, cmd Command) error {
-    if len(cmd.Args) == 0 {
-        return errors.New("no arguments found for command 'register'")
-    }
-    name := cmd.Args[0]
-
-    existingUser, err := s.Db.GetUser(context.Background(), name)
-    if existingUser != (database.User{}) {
-        return errors.New("User " + name + " already exists")
-    }
-
-    var params database.CreateUserParams
-    params.ID = uuid.New()
-    params.CreatedAt = time.Now()
-    params.UpdatedAt = time.Now()
-    params.Name = name
-
-    user, err := s.Db.CreateUser(context.Background(), params)
-    if err != nil {
-        return err
-    }
-
-    fmt.Printf("User %s was created with UUID: %v\n", user.Name, user.ID)
-
-    s.Cfg.SetUser(user.Name)
-
-    return nil
-}
-
-func handleReset(s *State, cmd Command) error {
-    if len(cmd.Args) > 0 {
-        return errors.New("Too many arguments for command")
-    }
-
-    err := s.Db.ResetUsers(context.Background())
-    if err != nil {
-        return err
-    }
-
-    return nil
-}
-
-func handleUsers(s *State, cmd Command) error {
-    if len(cmd.Args) > 0 {
-        return errors.New("Too many arguments for command")
-    }
-
-    currentUsername := s.Cfg.Username
-
-    users, err := s.Db.GetUsers(context.Background())
-    if err != nil {
-        return err
-    }
-
-    for _, user := range users {
-        if user.Name == currentUsername {
-            fmt.Printf("* %s (current)\n", user.Name)
-        } else {
-            fmt.Printf("* %s\n", user.Name)
-        }
-    }
-
-    return nil
-}
-
-func handleAgg(s *State, cmd Command) error {
-	if len(cmd.Args) > 0 {
-		return errors.New("Too many arguments for command")
-	}
-
-	url := "https://www.wagslane.dev/index.xml"
-
-	feed, err := rss.FetchFeed(context.Background(), url)
+	err := cmds.CommandMap[cmd.Name](s, cmd)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%v", feed)
+	return nil
+}
+
+func (cmds *Commands) register(name string, f func(*State, Command) error) {
+	cmds.CommandMap[name] = f
+}
+
+func handlerLogin(s *State, cmd Command) error {
+	if len(cmd.Args) == 0 {
+		return errors.New("no arguements found for command 'login'")
+	}
+
+	name := cmd.Args[0]
+
+	user, _ := s.Db.GetUser(context.Background(), name)
+	if user == (database.User{}) {
+		return errors.New("User does not exists")
+	}
+
+	s.Cfg.SetUser(cmd.Args[0])
+	fmt.Printf("User: %s, has logged in\n", s.Cfg.Username)
+
+	return nil
+}
+
+func handleRegister(s *State, cmd Command) error {
+	if len(cmd.Args) == 0 {
+		return errors.New("no arguments found for command 'register'")
+	}
+	name := cmd.Args[0]
+
+	existingUser, err := s.Db.GetUser(context.Background(), name)
+	if existingUser != (database.User{}) {
+		return errors.New("User " + name + " already exists")
+	}
+
+	var params database.CreateUserParams
+	params.ID = uuid.New()
+	params.CreatedAt = time.Now()
+	params.UpdatedAt = time.Now()
+	params.Name = name
+
+	user, err := s.Db.CreateUser(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("User %s was created with UUID: %v\n", user.Name, user.ID)
+
+	s.Cfg.SetUser(user.Name)
+
+	return nil
+}
+
+func handleReset(s *State, cmd Command) error {
+	if len(cmd.Args) > 0 {
+		return errors.New("Too many arguments for command")
+	}
+
+	err := s.Db.ResetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func handleUsers(s *State, cmd Command) error {
+	if len(cmd.Args) > 0 {
+		return errors.New("Too many arguments for command")
+	}
+
+	currentUsername := s.Cfg.Username
+
+	users, err := s.Db.GetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+
+	for _, user := range users {
+		if user.Name == currentUsername {
+			fmt.Printf("* %s (current)\n", user.Name)
+		} else {
+			fmt.Printf("* %s\n", user.Name)
+		}
+	}
+
+	return nil
+}
+
+func handleAgg(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) != 1 {
+		return errors.New("Too many arguments for command")
+	}
+	
+	time_between, err := time.ParseDuration(cmd.Args[0])
+	if err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(time_between)
+
+	for ; ; <-ticker.C {
+		err = scrapFeeds(s, user)
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func scrapFeeds(s *State, user database.User) error {
+	fmt.Printf("Getting Next Feed\n")
+
+	feed, err := s.Db.GetNextFeedToFetch(context.Background(), user.ID)
+	if err != nil {
+		return err
+	}
+
+	var markParams database.MarkFeedFetchParams
+	markParams.ID = feed.ID
+	markParams.UpdatedAt = time.Now()
+
+	err = s.Db.MarkFeedFetch(context.Background(), markParams)
+	if err != nil {
+		return err
+	}
+
+	rssFeed, err := rss.FetchFeed(context.Background(), feed.Url)
+	if err != nil {
+		return err
+	}
+
+	for _, feedItem := range rssFeed.Channel.Item {
+		fmt.Printf("Feed Item Title: %s\n", feedItem.Title)
+	}
 
 	return nil
 }
@@ -150,7 +182,7 @@ func handleAddFeed(s *State, cmd Command, user database.User) error {
 	params.Url = cmd.Args[1]
 	params.CreatedAt = time.Now()
 	params.UpdatedAt = time.Now()
-	
+
 	params.UserID = user.ID
 
 	feed, err := s.Db.CreateFeed(context.Background(), params)
@@ -186,9 +218,9 @@ func handleFollow(s *State, cmd Command, user database.User) error {
 	params.ID = uuid.New()
 	params.CreatedAt = time.Now()
 	params.UpdatedAt = time.Now()
-	
+
 	params.UserID = user.ID
-	
+
 	feed, err := s.Db.GetFeed(context.Background(), feedUrl)
 	if err != nil {
 		return err
@@ -199,7 +231,7 @@ func handleFollow(s *State, cmd Command, user database.User) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("Feed %s followed by user %s\n", feedFollow.FeedName, feedFollow.UserName)
 
 	return nil
@@ -262,7 +294,7 @@ func GetCommands() Commands {
 	cmds.register("register", handleRegister)
 	cmds.register("reset", handleReset)
 	cmds.register("users", handleUsers)
-	cmds.register("agg", handleAgg)
+	cmds.register("agg", middlewareLoggedIn(handleAgg))
 	cmds.register("addfeed", middlewareLoggedIn(handleAddFeed))
 	cmds.register("follow", middlewareLoggedIn(handleFollow))
 	cmds.register("following", middlewareLoggedIn(handleFollowing))
@@ -272,11 +304,11 @@ func GetCommands() Commands {
 }
 
 func GetCommand(name string, args []string) Command {
-    var cmd Command
-    cmd.Name = name
-    cmd.Args = args
+	var cmd Command
+	cmd.Name = name
+	cmd.Args = args
 
-    return cmd
+	return cmd
 }
 
 func middlewareLoggedIn(handler func(s *State, cmd Command, user database.User) error) func(s *State, cmd Command) error {
