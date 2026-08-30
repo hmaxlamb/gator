@@ -2,14 +2,17 @@ package command
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type State struct {
@@ -165,10 +168,63 @@ func scrapFeeds(s *State, user database.User) error {
 	}
 
 	for _, feedItem := range rssFeed.Channel.Item {
-		fmt.Printf("Feed Item Title: %s\n", feedItem.Title)
+		var postParams database.CreatePostParams
+		postParams.ID = uuid.New()
+		postParams.CreatedAt = time.Now()
+		postParams.UpdatedAt = time.Now()
+		postParams.Title = feedItem.Title
+		postParams.Description = newNullString(feedItem.Description)
+		postParams.PublishedAt, err = parsePublishedDate(feedItem.PubDate)
+		if err != nil {
+			fmt.Printf("Could Not Parse Pub DATE!!!! for feed item: %s, Time %s\n", feedItem.Title, feedItem.PubDate)
+			fmt.Printf("Error %v\n", err)
+			continue
+		}
+		postParams.FeedID = feed.ID
+
+		err := s.Db.CreatePost(context.Background(), postParams)
+		if checkUniqueError(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func newNullString(s string) sql.NullString {
+	if len(s) == 0 {
+		return sql.NullString{}
+	}
+
+	return sql.NullString{
+		String: s,
+		Valid: true,
+	}
+}
+
+func parsePublishedDate(dateString string) (time.Time, error) {
+	t, err := time.Parse(time.RFC822, dateString)
+	if err != nil {
+		t, err = time.Parse(time.RFC1123, dateString)
+		if err != nil {
+			return time.Time{}, err
+		}
+	}
+
+	return t, nil
+}
+
+func checkUniqueError(e error) bool {
+	var pqErr *pq.Error
+	if errors.As(e, &pqErr) {
+		if pqErr.Code == "23505" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func handleAddFeed(s *State, cmd Command, user database.User) error {
@@ -285,6 +341,47 @@ func handleUnfollow(s *State, cmd Command, user database.User) error {
 	return nil
 }
 
+func handleBrowse(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) > 1 {
+		return errors.New("Wrong number of args for command, Required: 0-1")
+	}
+
+	var limit int32
+
+	if cmd.Args[0] == "" {
+		limit = 2
+	} else {
+		limit64, err := strconv.ParseInt(cmd.Args[0], 0, 32)
+
+		limit = int32(limit64)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	var params database.GetPostByUserParams
+	params.UserID = user.ID
+	params.Limit = limit
+
+	posts, err := s.Db.GetPostByUser(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	if len(posts) == 0 {
+		fmt.Printf("No posts found\n")
+	}
+
+	for _, post := range posts {
+		fmt.Printf("Title: %s\n", post.Title)
+		fmt.Printf("Date: %v\n", post.PublishedAt)
+		fmt.Printf("Decs: %s\n", post.Description)
+		fmt.Printf("\n")
+	}
+	return nil
+}
+
 func GetCommands() Commands {
 	var cmds Commands
 
@@ -299,6 +396,7 @@ func GetCommands() Commands {
 	cmds.register("follow", middlewareLoggedIn(handleFollow))
 	cmds.register("following", middlewareLoggedIn(handleFollowing))
 	cmds.register("unfollow", middlewareLoggedIn(handleUnfollow))
+	cmds.register("browse", middlewareLoggedIn(handleBrowse))
 
 	return cmds
 }
