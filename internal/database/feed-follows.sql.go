@@ -15,9 +15,9 @@ import (
 const createFeedFollow = `-- name: CreateFeedFollow :one
 WITH inserted_feed_follow AS (
     INSERT INTO feed_follows (
-        user_id, feed_id
+        id, user_id, feed_id, created_at, updated_at
     ) VALUES (
-        $1, $2
+        $1, $2, $3, $4, $5
     )
     RETURNING id, user_id, feed_id, created_at, updated_at
 )
@@ -31,12 +31,15 @@ INNER JOIN feeds on inserted_feed_follow.feed_id = feeds.id
 `
 
 type CreateFeedFollowParams struct {
-	UserID uuid.UUID
-	FeedID uuid.UUID
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	FeedID    uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type CreateFeedFollowRow struct {
-	ID        int32
+	ID        uuid.UUID
 	UserID    uuid.UUID
 	FeedID    uuid.UUID
 	CreatedAt time.Time
@@ -46,7 +49,13 @@ type CreateFeedFollowRow struct {
 }
 
 func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowParams) (CreateFeedFollowRow, error) {
-	row := q.db.QueryRowContext(ctx, createFeedFollow, arg.UserID, arg.FeedID)
+	row := q.db.QueryRowContext(ctx, createFeedFollow,
+		arg.ID,
+		arg.UserID,
+		arg.FeedID,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
 	var i CreateFeedFollowRow
 	err := row.Scan(
 		&i.ID,
@@ -58,4 +67,60 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 		&i.UserName,
 	)
 	return i, err
+}
+
+const deleteFeedFollow = `-- name: DeleteFeedFollow :exec
+DELETE FROM feed_follows
+WHERE user_id = $1
+AND feed_id = $2
+`
+
+type DeleteFeedFollowParams struct {
+	UserID uuid.UUID
+	FeedID uuid.UUID
+}
+
+func (q *Queries) DeleteFeedFollow(ctx context.Context, arg DeleteFeedFollowParams) error {
+	_, err := q.db.ExecContext(ctx, deleteFeedFollow, arg.UserID, arg.FeedID)
+	return err
+}
+
+const getFeedFollowsByUser = `-- name: GetFeedFollowsByUser :many
+SELECT 
+    feeds.name as feed_name, 
+    feeds.url as feed_url,
+    users.name as user_name 
+FROM feed_follows
+INNER JOIN users on feed_follows.user_id = users.id
+INNER JOIN feeds on feed_follows.feed_id = feeds.id
+WHERE users.name = $1
+`
+
+type GetFeedFollowsByUserRow struct {
+	FeedName string
+	FeedUrl  string
+	UserName string
+}
+
+func (q *Queries) GetFeedFollowsByUser(ctx context.Context, name string) ([]GetFeedFollowsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFeedFollowsByUser, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFeedFollowsByUserRow
+	for rows.Next() {
+		var i GetFeedFollowsByUserRow
+		if err := rows.Scan(&i.FeedName, &i.FeedUrl, &i.UserName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -20,7 +20,7 @@ type Feed struct {
 }
 
 type FeedFollow struct {
-	ID        int32
+	ID        uuid.UUID
 	UserID    uuid.UUID
 	FeedID    uuid.UUID
 	CreatedAt time.Time

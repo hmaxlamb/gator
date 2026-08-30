@@ -3,11 +3,11 @@ package command
 import (
 	"context"
 	"errors"
+	"fmt"
 	"gator/internal/config"
 	"gator/internal/database"
 	"gator/internal/rss"
-    "fmt"
-    "time"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -139,7 +139,7 @@ func handleAgg(s *State, cmd Command) error {
 	return nil
 }
 
-func handleAddFeed(s *State, cmd Command) error {
+func handleAddFeed(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) != 2 {
 		return errors.New("Wrong number of args for command, Required: 2")
 	}
@@ -150,11 +150,7 @@ func handleAddFeed(s *State, cmd Command) error {
 	params.Url = cmd.Args[1]
 	params.CreatedAt = time.Now()
 	params.UpdatedAt = time.Now()
-
-	user, err := s.Db.GetUser(context.Background(), s.Cfg.Username)
-	if err != nil {
-		return err
-	}
+	
 	params.UserID = user.ID
 
 	feed, err := s.Db.CreateFeed(context.Background(), params)
@@ -162,25 +158,117 @@ func handleAddFeed(s *State, cmd Command) error {
 		return err
 	}
 
-	fmt.Printf("Feed Added: %v\n", feed)
+	var followParams database.CreateFeedFollowParams
+	followParams.ID = uuid.New()
+	followParams.UserID = user.ID
+	followParams.FeedID = feed.ID
+	followParams.CreatedAt = time.Now()
+	followParams.UpdatedAt = time.Now()
+
+	_, err = s.Db.CreateFeedFollow(context.Background(), followParams)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Feed Added:\nName: %s\nURL: %s", feed.Name, feed.Url)
 
 	return nil
 }
 
+func handleFollow(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) != 1 {
+		return errors.New("Wrong number of args for command, Required: 1")
+	}
+
+	feedUrl := cmd.Args[0]
+
+	var params database.CreateFeedFollowParams
+	params.ID = uuid.New()
+	params.CreatedAt = time.Now()
+	params.UpdatedAt = time.Now()
+	
+	params.UserID = user.ID
+	
+	feed, err := s.Db.GetFeed(context.Background(), feedUrl)
+	if err != nil {
+		return err
+	}
+	params.FeedID = feed.ID
+
+	feedFollow, err := s.Db.CreateFeedFollow(context.Background(), params)
+	if err != nil {
+		return err
+	}
+	
+	fmt.Printf("Feed %s followed by user %s\n", feedFollow.FeedName, feedFollow.UserName)
+
+	return nil
+}
+
+func handleFollowing(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) != 0 {
+		return errors.New("No args allowed for command")
+	}
+
+	feeds, err := s.Db.GetFeedFollowsByUser(context.Background(), s.Cfg.Username)
+	if err != nil {
+		return err
+	}
+
+	if len(feeds) == 0 {
+		fmt.Printf("No feeds found for user %s", s.Cfg.Username)
+		return nil
+	}
+
+	fmt.Printf("Feeds found for user %s:\n", s.Cfg.Username)
+
+	for _, feed := range feeds {
+		fmt.Printf("Feed Name: %s, Feed URL: %s\n", feed.FeedName, feed.FeedUrl)
+	}
+
+	return nil
+}
+
+func handleUnfollow(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) != 1 {
+		return errors.New("Wrong number of args for command, Required: 1")
+	}
+
+	url := cmd.Args[0]
+
+	feed, err := s.Db.GetFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	var params database.DeleteFeedFollowParams
+	params.UserID = user.ID
+	params.FeedID = feed.ID
+
+	err = s.Db.DeleteFeedFollow(context.Background(), params)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func GetCommands() Commands {
-    var cmds Commands
+	var cmds Commands
 
-    cmds.CommandMap = make(map[string]func(*State, Command) error)
+	cmds.CommandMap = make(map[string]func(*State, Command) error)
 
-    cmds.register("login", handlerLogin)
-    cmds.register("register", handleRegister)
-    cmds.register("reset", handleReset)
-    cmds.register("users", handleUsers)
+	cmds.register("login", handlerLogin)
+	cmds.register("register", handleRegister)
+	cmds.register("reset", handleReset)
+	cmds.register("users", handleUsers)
 	cmds.register("agg", handleAgg)
-	cmds.register("addfeed", handleAddFeed)
+	cmds.register("addfeed", middlewareLoggedIn(handleAddFeed))
+	cmds.register("follow", middlewareLoggedIn(handleFollow))
+	cmds.register("following", middlewareLoggedIn(handleFollowing))
+	cmds.register("unfollow", middlewareLoggedIn(handleUnfollow))
 
-    return cmds
+	return cmds
 }
 
 func GetCommand(name string, args []string) Command {
@@ -189,4 +277,20 @@ func GetCommand(name string, args []string) Command {
     cmd.Args = args
 
     return cmd
+}
+
+func middlewareLoggedIn(handler func(s *State, cmd Command, user database.User) error) func(s *State, cmd Command) error {
+	return func(s *State, cmd Command) error {
+		user, err := s.Db.GetUser(context.Background(), s.Cfg.Username)
+		if err != nil {
+			return err
+		}
+
+		err = handler(s, cmd, user)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
 }
