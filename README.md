@@ -1,4 +1,4 @@
-#GATOR
+# GATOR
 
 This is a go program that allows users to view rss feeds via the command line
 
@@ -7,7 +7,7 @@ Multiple users are supported.
 Clone the repo and run "docker compose up"
 
 
-####Commands
+#### Commands
 
 register: registers a new user
 
