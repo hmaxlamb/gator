@@ -1,4 +1,4 @@
-# GATOR
+# Gator
 
 This is a go program that allows users to view rss feeds via the command line
 
